@@ -41,8 +41,7 @@ vllm_image = modal.Image.debian_slim(python_version="3.10").pip_install(
 # in the Instruct variant that's trained to chat and follow instructions.
 
 MODELS_DIR = "/llamas"
-MODEL_NAME = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-MODEL_REVISION = "8c22764a7e3675c50d4c7c9a4edb474456022b16"
+MODEL_NAME = "bluuwhale/L3-SthenoMaidBlackroot-8B-V1"
 
 # We need to make the weights of that model available to our Modal Functions.
 #

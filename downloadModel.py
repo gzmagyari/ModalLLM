@@ -5,8 +5,7 @@ import modal
 
 MODELS_DIR = "/llamas"
 
-DEFAULT_NAME = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-DEFAULT_REVISION = "8c22764a7e3675c50d4c7c9a4edb474456022b16"
+DEFAULT_NAME = "bluuwhale/L3-SthenoMaidBlackroot-8B-V1"
 
 volume = modal.Volume.from_name("llamas", create_if_missing=True)
 
@@ -32,7 +31,7 @@ app = modal.App(
 
 
 @app.function(volumes={MODELS_DIR: volume}, timeout=4 * HOURS)
-def download_model(model_name, model_revision, force_download=False):
+def download_model(model_name, force_download=False):
     from huggingface_hub import snapshot_download
 
     volume.reload()
@@ -46,7 +45,6 @@ def download_model(model_name, model_revision, force_download=False):
             "*.pth",
             "original/*",
         ],  # Ensure safetensors
-        revision=model_revision,
         force_download=force_download,
     )
 
@@ -56,7 +54,6 @@ def download_model(model_name, model_revision, force_download=False):
 @app.local_entrypoint()
 def main(
     model_name: str = DEFAULT_NAME,
-    model_revision: str = DEFAULT_REVISION,
     force_download: bool = False,
 ):
-    download_model.remote(model_name, model_revision, force_download)
+    download_model.remote(model_name, force_download)
