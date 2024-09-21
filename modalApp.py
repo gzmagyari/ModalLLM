@@ -1,94 +1,74 @@
 # ---
 # deploy: true
-# cmd: ["modal", "serve", "06_gpu_and_ml/llm-serving/vllm_inference.py"]
+# cmd: ["modal", "serve", "vllm_inference.py"]
 # pytest: false
 # ---
-# # Run an OpenAI-Compatible vLLM Server
+# # Run an OpenAI-Compatible vLLM Server with Baked-in Model Weights
 #
-# LLMs do more than just model language: they chat, they produce JSON and XML, they run code, and more.
-# This has complicated their interface far beyond "text-in, text-out".
-# OpenAI's API has emerged as a standard for that interface,
-# and it is supported by open source LLM serving frameworks like [vLLM](https://docs.vllm.ai/en/latest/).
+# This example demonstrates how to run a vLLM server in OpenAI-compatible mode on Modal, with the model weights baked into the container image itself. This approach eliminates the need for a separate volume to store the model weights and can simplify deployment and cold start times.
 #
-# In this example, we show how to run a vLLM server in OpenAI-compatible mode on Modal.
-# You can find a video walkthrough of this example on our YouTube channel [here](https://www.youtube.com/watch?v=QmY_7ePR1hM).
-#
-# Note that the vLLM server is a FastAPI app, which can be configured and extended just like any other.
-# Here, we use it to add simple authentication middleware, following the
-# [implementation in the vLLM repository](https://github.com/vllm-project/vllm/blob/v0.5.3post1/vllm/entrypoints/openai/api_server.py).
-#
-# Our examples repository also includes scripts for running clients and load-testing for OpenAI-compatible APIs
-# [here](https://github.com/modal-labs/modal-examples/tree/main/06_gpu_and_ml/llm-serving/openai_compatible).
-#
-# You can find a video walkthrough of this example and the related scripts on the Modal YouTube channel
-# [here](https://www.youtube.com/watch?v=QmY_7ePR1hM).
-#
-# ## Set up the container image
-#
-# Our first order of business is to define the environment our server will run in:
-# the [container `Image`](https://modal.com/docs/guide/custom-container).
-# vLLM is can be installed with `pip`.
+# We will use Meta's LLaMA 3.1 8B in the Instruct variant that's trained to chat and follow instructions.
 
+import os
 import modal
 
-vllm_image = modal.Image.debian_slim(python_version="3.10").pip_install(
-    "vllm==0.5.3post1"
-)
-
-# ## Download the model weights
-#
-# We'll be running a pretrained foundation model -- Meta's LLaMA 3.1 8B
-# in the Instruct variant that's trained to chat and follow instructions.
-
-MODELS_DIR = "/llamas"
+# Define the model directory and name
+MODEL_DIR = "/model"
 MODEL_NAME = "bluuwhale/L3-SthenoMaidBlackroot-8B-V1"
 
-# We need to make the weights of that model available to our Modal Functions.
-#
-# So to follow along with this example, you'll need to download those weights
-# onto a Modal Volume by running another script from the
-# [examples repository](https://github.com/modal-labs/modal-examples).
+# Function to download the model weights into the image during build time
+def download_model_to_image(model_dir, model_name):
+    from huggingface_hub import snapshot_download
+    #from transformers.utils import move_cache
 
-try:
-    volume = modal.Volume.lookup("llamas", create_if_missing=False)
-except modal.exception.NotFoundError:
-    raise Exception("Download models first with modal run download_llama.py")
+    os.makedirs(model_dir, exist_ok=True)
 
+    snapshot_download(
+        repo_id=model_name,
+        local_dir=model_dir,
+        use_auth_token=os.environ.get("HF_TOKEN"),
+        ignore_patterns=["*.pt", "*.bin"],  # Using safetensors
+    )
+    #move_cache()
 
-# ## Build a vLLM engine and serve it
-#
-# vLLM's OpenAI-compatible server is exposed as a [FastAPI](https://fastapi.tiangolo.com/) router.
-#
-# FastAPI is a Python web framework that implements the [ASGI standard](https://en.wikipedia.org/wiki/Asynchronous_Server_Gateway_Interface),
-# much like [Flask](https://en.wikipedia.org/wiki/Flask_(web_framework)) is a Python web framework
-# that implements the [WSGI standard](https://en.wikipedia.org/wiki/Web_Server_Gateway_Interface).
-#
-# Modal offers [first-class support for ASGI (and WSGI) apps](https://modal.com/docs/guide/webhooks). We just need to decorate a function that returns the app
-# with `@modal.asgi_app()` (or `@modal.wsgi_app()`) and then add it to the Modal app with the `app.function` decorator.
-#
-# The function below first imports the FastAPI router from the vLLM library, then adds authentication compatible with OpenAI client libraries. You might also add more routes here.
-#
-# Then, the function creates an `AsyncLLMEngine`, the core of the vLLM server. It's responsible for loading the model, running inference, and serving responses.
-#
-# After attaching that engine to the FastAPI app via the `api_server` module of the vLLM library, we return the FastAPI app
-# so it can be served on Modal.
+# Define the container image with the baked-in model
+vllm_image = (
+    modal.Image.debian_slim(python_version="3.10")
+    .pip_install(
+        "vllm==0.4.0.post1",
+        "torch==2.1.2",
+        "transformers==4.39.3",
+        "ray==2.10.0",
+        "hf-transfer==0.1.6",
+        "huggingface_hub==0.22.2",
+    )
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .run_function(
+        download_model_to_image,
+        timeout=60 * 20,
+        kwargs={
+            "model_dir": MODEL_DIR,
+            "model_name": MODEL_NAME,
+        },
+        secrets=[modal.Secret.from_name("huggingface-secret")],
+    )
+)
 
 app = modal.App("vllm-openai-compatible")
 
-N_GPU = 1  # tip: for best results, first upgrade to more powerful GPUs, and only then increase GPU count
-TOKEN = "super-secret-token"  # auth token. for production use, replace with a modal.Secret
-
-MINUTES = 60  # seconds
+# Configuration variables
+N_GPU = 1  # Adjust based on your model size and GPU availability
+TOKEN = "super-secret-token"  # Authentication token; replace with a modal.Secret in production
+MINUTES = 60  # Seconds
 HOURS = 60 * MINUTES
 
-
+# Define the ASGI app function
 @app.function(
     image=vllm_image,
     gpu=modal.gpu.A100(count=N_GPU, size="40GB"),
     container_idle_timeout=5 * MINUTES,
     timeout=24 * HOURS,
     allow_concurrent_inputs=100,
-    volumes={MODELS_DIR: volume},
 )
 @modal.asgi_app()
 def serve():
@@ -103,20 +83,18 @@ def serve():
     )
     from vllm.usage.usage_lib import UsageContext
 
-    volume.reload()  # ensure we have the latest version of the weights
-
-    # create a fastAPI app that uses vLLM's OpenAI-compatible router
+    # Create a FastAPI app using vLLM's OpenAI-compatible router
     web_app = fastapi.FastAPI(
         title=f"OpenAI-compatible {MODEL_NAME} server",
-        description="Run an OpenAI-compatible LLM server with vLLM on modal.com",
+        description="Run an OpenAI-compatible LLM server with vLLM on Modal",
         version="0.0.1",
         docs_url="/docs",
     )
 
-    # security: CORS middleware for external requests
+    # Security: CORS middleware for external requests
     http_bearer = fastapi.security.HTTPBearer(
         scheme_name="Bearer Token",
-        description="See code for authentication details.",
+        description="Provide a valid authentication token.",
     )
     web_app.add_middleware(
         fastapi.middleware.cors.CORSMiddleware,
@@ -126,7 +104,7 @@ def serve():
         allow_headers=["*"],
     )
 
-    # security: inject dependency on authed routes
+    # Security: Inject dependency on authenticated routes
     async def is_authenticated(api_key: str = fastapi.Security(http_bearer)):
         if api_key.credentials != TOKEN:
             raise fastapi.HTTPException(
@@ -137,27 +115,30 @@ def serve():
 
     router = fastapi.APIRouter(dependencies=[fastapi.Depends(is_authenticated)])
 
-    # wrap vllm's router in auth router
+    # Include vLLM's router within the authenticated router
     router.include_router(api_server.router)
-    # add authed vllm to our fastAPI app
     web_app.include_router(router)
 
+    # Define engine arguments
     engine_args = AsyncEngineArgs(
-        model=MODELS_DIR + "/" + MODEL_NAME,
+        model=os.path.join(MODEL_DIR, MODEL_NAME),
         tensor_parallel_size=N_GPU,
         gpu_memory_utilization=0.90,
         max_model_len=8096,
-        enforce_eager=False,  # capture the graph for faster inference, but slower cold starts (30s > 20s)
+        enforce_eager=False,  # Set to True for faster inference but slower cold starts
     )
 
+    # Initialize the vLLM engine
     engine = AsyncLLMEngine.from_engine_args(
         engine_args, usage_context=UsageContext.OPENAI_API_SERVER
     )
 
+    # Retrieve model configuration
     model_config = get_model_config(engine)
 
     request_logger = RequestLogger(max_log_len=2048)
 
+    # Set up OpenAI-compatible chat and completion services
     api_server.openai_serving_chat = OpenAIServingChat(
         engine,
         model_config=model_config,
@@ -179,66 +160,20 @@ def serve():
 
     return web_app
 
-
-# ## Deploy the server
-#
-# To deploy the API on Modal, just run
-# ```bash
-# modal deploy vllm_inference.py
-# ```
-#
-# This will create a new app on Modal, build the container image for it, and deploy.
-#
-# ## Interact with the server
-#
-# Once it is deployed, you'll see a URL appear in the command line,
-# something like `https://your-workspace-name--example-vllm-openai-compatible-serve.modal.run`.
-#
-# You can find [interactive Swagger UI docs](https://swagger.io/tools/swagger-ui/)
-# at the `/docs` route of that URL, i.e. `https://your-workspace-name--example-vllm-openai-compatible-serve.modal.run/docs`.
-# These docs describe each route and indicate the expected input and output
-# and translate requests into `curl` commands. They also demonstrate authentication.
-#
-# For simple routes like `/health`, which checks whether the server is responding,
-# you can even send a request directly from the docs.
-#
-# To interact with the API programmatically, you can use the Python `openai` library.
-#
-# See the `client.py` script in the examples repository
-# [here](https://github.com/modal-labs/modal-examples/tree/main/06_gpu_and_ml/llm-serving/openai_compatible)
-# to take it for a spin:
-#
-# ```bash
-# # pip install openai==1.13.3
-# python openai_compatible/client.py
-# ```
-#
-# We also include a basic example of a load-testing setup using
-# `locust` in the `load_test.py` script [here](https://github.com/modal-labs/modal-examples/tree/main/06_gpu_and_ml/llm-serving/openai_compatibl):
-#
-# ```bash
-# modal run openai_compatible/load_test.py
-# ```
-#
-# ## Addenda
-#
-# The rest of the code in this example is utility code.
-
-
+# Utility function to get model configuration
 def get_model_config(engine):
     import asyncio
 
-    try:  # adapted from vLLM source -- https://github.com/vllm-project/vllm/blob/507ef787d85dec24490069ffceacbd6b161f4f72/vllm/entrypoints/openai/api_server.py#L235C1-L247C1
+    try:
         event_loop = asyncio.get_running_loop()
     except RuntimeError:
         event_loop = None
 
     if event_loop is not None and event_loop.is_running():
-        # If the current is instanced by Ray Serve,
-        # there is already a running event loop
+        # If there's an existing event loop
         model_config = event_loop.run_until_complete(engine.get_model_config())
     else:
-        # When using single vLLM without engine_use_ray
+        # If no event loop is running
         model_config = asyncio.run(engine.get_model_config())
 
     return model_config
