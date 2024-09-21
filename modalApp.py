@@ -118,7 +118,7 @@ def serve():
 
     # Define engine arguments
     engine_args = AsyncEngineArgs(
-        model=os.path.join(MODEL_DIR, MODEL_NAME),
+        model=MODEL_DIR,
         tensor_parallel_size=N_GPU,
         gpu_memory_utilization=0.90,
         max_model_len=8096,
