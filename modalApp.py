@@ -36,8 +36,8 @@ vllm_image = (
     modal.Image.debian_slim(python_version="3.10")
     .pip_install(
         "vllm==0.5.3post1",
-        "hf-transfer==0.1.6",
-        "huggingface_hub==0.22.2",
+        "hf-transfer",
+        "huggingface_hub",
     )
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .run_function(
