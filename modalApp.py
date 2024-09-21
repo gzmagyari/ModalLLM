@@ -76,7 +76,6 @@ def serve():
     import vllm.entrypoints.openai.api_server as api_server
     from vllm.engine.arg_utils import AsyncEngineArgs
     from vllm.engine.async_llm_engine import AsyncLLMEngine
-    from vllm.entrypoints.logger import RequestLogger
     from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
     from vllm.entrypoints.openai.serving_completion import (
         OpenAIServingCompletion,
@@ -136,8 +135,6 @@ def serve():
     # Retrieve model configuration
     model_config = get_model_config(engine)
 
-    request_logger = RequestLogger(max_log_len=2048)
-
     # Set up OpenAI-compatible chat and completion services
     api_server.openai_serving_chat = OpenAIServingChat(
         engine,
@@ -147,7 +144,6 @@ def serve():
         response_role="assistant",
         lora_modules=[],
         prompt_adapters=[],
-        request_logger=request_logger,
     )
     api_server.openai_serving_completion = OpenAIServingCompletion(
         engine,
@@ -155,7 +151,6 @@ def serve():
         served_model_names=[MODEL_NAME],
         lora_modules=[],
         prompt_adapters=[],
-        request_logger=request_logger,
     )
 
     return web_app
