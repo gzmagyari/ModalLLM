@@ -36,9 +36,6 @@ vllm_image = (
     modal.Image.debian_slim(python_version="3.10")
     .pip_install(
         "vllm==0.5.3post1",
-        "torch==2.1.2",
-        "transformers==4.39.3",
-        "ray==2.10.0",
         "hf-transfer==0.1.6",
         "huggingface_hub==0.22.2",
     )
