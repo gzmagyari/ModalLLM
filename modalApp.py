@@ -19,7 +19,7 @@ MODEL_NAME = "bluuwhale/L3-SthenoMaidBlackroot-8B-V1"
 # Function to download the model weights into the image during build time
 def download_model_to_image(model_dir, model_name):
     from huggingface_hub import snapshot_download
-    #from transformers.utils import move_cache
+    from transformers.utils import move_cache
 
     os.makedirs(model_dir, exist_ok=True)
 
@@ -29,7 +29,7 @@ def download_model_to_image(model_dir, model_name):
         use_auth_token=os.environ.get("HF_TOKEN"),
         ignore_patterns=["*.pt", "*.bin"],  # Using safetensors
     )
-    #move_cache()
+    move_cache()
 
 # Define the container image with the baked-in model
 vllm_image = (
