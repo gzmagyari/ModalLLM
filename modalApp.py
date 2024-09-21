@@ -74,7 +74,7 @@ except modal.exception.NotFoundError:
 # After attaching that engine to the FastAPI app via the `api_server` module of the vLLM library, we return the FastAPI app
 # so it can be served on Modal.
 
-app = modal.App("example-vllm-openai-compatible")
+app = modal.App("vllm-openai-compatible")
 
 N_GPU = 1  # tip: for best results, first upgrade to more powerful GPUs, and only then increase GPU count
 TOKEN = "super-secret-token"  # auth token. for production use, replace with a modal.Secret
