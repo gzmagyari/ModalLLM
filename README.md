@@ -1,4 +1,4 @@
-# Modal LLM Serving Project
+# Modal LLM Serving
 
 ## Project Overview
 
